@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Group 31 Project Evaluation Agent</title>
+  <meta name="description" content="ENG 3000 Group 31 chat agent that evaluates proposed engineering projects in Ontario.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="titles">
+        <h1>Group 31 Project Evaluation Agent</h1>
+        <p class="subtitle">ENG 3000 · York University</p>
+      </div>
+      <div class="actions">
+        <button type="button" id="view-prompt" class="btn secondary">View system prompt</button>
+        <button type="button" id="new-eval" class="btn secondary">New evaluation</button>
+      </div>
+    </header>
+
+    <main id="messages" class="messages" aria-live="polite">
+      <div class="empty" id="empty">
+        Describe the engineering project you want evaluated. Include the location in Ontario, scope, client, and any known permits or constraints.
+      </div>
+    </main>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <textarea id="input" rows="2" placeholder="Describe the proposed project (what, where, who for, scale, known risks)..." aria-label="Message"></textarea>
+      <button type="submit" id="send" class="btn primary">Send</button>
+    </form>
+
+    <footer class="app-footer">
+      Educational tool for ENG 3000. Not legal or professional engineering advice.
+    </footer>
+  </div>
+
+  <dialog id="prompt-dialog" class="dialog">
+    <div class="dialog-head">
+      <h2>System prompt</h2>
+    </div>
+    <pre id="prompt-text" class="prompt-text">Loading...</pre>
+    <div class="dialog-foot">
+      <button type="button" id="copy-prompt" class="btn secondary">Copy</button>
+      <button type="button" id="close-prompt" class="btn primary">Close</button>
+    </div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.4.2/lib/marked.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.17/purify.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
