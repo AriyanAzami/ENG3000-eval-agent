@@ -3,47 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Group 31 Project Evaluation Agent</title>
   <meta name="description" content="ENG 3000 Group 31 chat agent that evaluates proposed engineering projects in Ontario.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <div class="app">
     <header class="app-header">
-      <div class="titles">
-        <h1>Group 31 Project Evaluation Agent</h1>
-        <p class="subtitle">ENG 3000 · York University</p>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 32 32" width="34" height="34" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#E31837"/>
+          <path d="M16 6.5 24.5 9.6v6.2c0 4.8-3.4 8.2-8.5 9.9-5.1-1.7-8.5-5.1-8.5-9.9V9.6L16 6.5Z" fill="none" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/>
+          <path d="m11.9 16.2 3 3 5.4-5.8" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="titles">
+          <h1>Group 31 Project Evaluation Agent</h1>
+          <p class="subtitle">ENG 3000 · York University</p>
+        </div>
       </div>
       <div class="actions">
-        <button type="button" id="view-prompt" class="btn secondary">View system prompt</button>
-        <button type="button" id="new-eval" class="btn secondary">New evaluation</button>
+        <button type="button" id="view-prompt" class="btn ghost" aria-label="View system prompt">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z M14 3v5h5 M9 13h6 M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="label">View system prompt</span>
+        </button>
+        <button type="button" id="new-eval" class="btn ghost" aria-label="New evaluation">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          <span class="label">New evaluation</span>
+        </button>
       </div>
     </header>
 
-    <main id="messages" class="messages" aria-live="polite">
-      <div class="empty" id="empty">
-        Describe the engineering project you want evaluated. Include the location in Ontario, scope, client, and any known permits or constraints.
-      </div>
+    <main id="messages" class="messages" aria-live="polite" aria-label="Conversation">
+      <section class="hero" id="empty">
+        <h2 class="hero-title">Test a project against Ontario obligations.</h2>
+        <p class="hero-lede">Paste a proposed engineering project. The agent reviews it against professional duties, applicable law, and benefit to the land, then gives a verdict.</p>
+        <ul class="pills" aria-label="Evaluation framework">
+          <li>Q1 Obligations</li>
+          <li>Q2 Legal</li>
+          <li>Q3 Land</li>
+          <li>Risk</li>
+          <li>Ethics</li>
+          <li>Verdict</li>
+        </ul>
+        <div class="examples" role="group" aria-label="Example projects">
+          <button type="button" class="example" data-text="Our firm is proposing a 20 MW ground-mounted solar farm on about 60 hectares of Class 1 farmland near Guelph. The land is leased from three local farm owners, and the connection point is a nearby 44 kV distribution line.">
+            <span class="example-title">20 MW solar farm on Class 1 farmland near Guelph</span>
+            <span class="example-desc">Leased farmland, 44 kV grid connection</span>
+          </button>
+          <button type="button" class="example" data-text="A municipality wants a 45 m pedestrian bridge over a Toronto ravine creek. Construction would need removal of about 30 mature trees, work within a regulated floodplain, and a temporary access road through a conservation area.">
+            <span class="example-title">Pedestrian bridge over a Toronto creek requiring tree removal</span>
+            <span class="example-desc">Floodplain work, about 30 mature trees</span>
+          </button>
+          <button type="button" class="example" data-text="We are designing an upgrade to the wastewater treatment plant serving a First Nations community near Thunder Bay. The plant discharges into a river used for fishing and is under a long-term drinking water advisory, and the community has asked to co-manage the project.">
+            <span class="example-title">Wastewater treatment upgrade for a First Nations community near Thunder Bay</span>
+            <span class="example-desc">River discharge, community co-management</span>
+          </button>
+        </div>
+      </section>
     </main>
 
-    <form id="composer" class="composer" autocomplete="off">
-      <textarea id="input" rows="2" placeholder="Describe the proposed project (what, where, who for, scale, known risks)..." aria-label="Message"></textarea>
-      <button type="submit" id="send" class="btn primary">Send</button>
-    </form>
-
-    <footer class="app-footer">
-      Educational tool for ENG 3000. Not legal or professional engineering advice.
-    </footer>
+    <div class="dock">
+      <form id="composer" class="composer" autocomplete="off">
+        <label for="input" class="sr-only">Describe the proposed project</label>
+        <textarea id="input" rows="1" placeholder="Describe the proposed project: what, where, who for, scale, known risks"></textarea>
+        <div class="composer-bar">
+          <span class="hint">Enter to send · Shift+Enter for new line</span>
+          <span id="counter" class="counter" hidden></span>
+          <button type="button" id="stop" class="btn stop" hidden aria-label="Stop generating">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+            <span>Stop</span>
+          </button>
+          <button type="submit" id="send" class="send" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </form>
+      <footer class="app-footer">
+        Educational tool for ENG 3000. Not legal or professional engineering advice.
+      </footer>
+    </div>
   </div>
 
-  <dialog id="prompt-dialog" class="dialog">
+  <dialog id="prompt-dialog" class="dialog" aria-labelledby="prompt-title">
     <div class="dialog-head">
-      <h2>System prompt</h2>
+      <h2 id="prompt-title">System prompt</h2>
     </div>
     <pre id="prompt-text" class="prompt-text">Loading...</pre>
     <div class="dialog-foot">
-      <button type="button" id="copy-prompt" class="btn secondary">Copy</button>
-      <button type="button" id="close-prompt" class="btn primary">Close</button>
+      <button type="button" id="copy-prompt" class="btn ghost">Copy</button>
+      <button type="button" id="close-prompt" class="btn solid">Close</button>
     </div>
   </dialog>
 
