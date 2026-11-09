@@ -6,3 +6,6 @@ node_modules
 .env.*
 dist
 !.dev.vars.example
+
+# scratch test runs and model probes (final transcripts live in tests/results)
+tests/runs/

@@ -1,0 +1,5 @@
+{
+ "turns": [
+  "A smart traffic-signal control system for 40 intersections in Vaughan, Ontario. AI software adjusts signal timing automatically from camera data. The firm has a Certificate of Authorization and a P.Eng. leads the design. The software will be deployed citywide at once to meet the council deadline. Testing was done by the development team only. The design uses visual signals only. The project is next to lands of interest to the Mississaugas of the Credit First Nation. No public meetings are planned. Disciplines: software, electrical and civil (traffic). Phase: pre-deployment. Decision makers: City of Vaughan transportation director and city council. Objective: cut average intersection delay by 20%. Scope: signal controllers, cameras, AI software and network; maintenance for 5 years."
+ ]
+}
