@@ -16,3 +16,12 @@ Date: 2026-11-09. Each test was a fresh conversation. Two consecutive passing ru
 | T4 Format (T1, T2) | PASS | PASS | Section 1–8 headings, platform IDs (every ID 1.1–7.12 accounted for), valid Markdown tables, disclaimer, finish_reason "stop" (not cut off). |
 
 Mechanical checks: `node tests/grade.mjs tests/runs/<pass>` (included as `tests/grade.mjs`). The judgement criteria were also checked by reading each transcript.
+
+## Run 3 (2026-11-09, after the UI note was added; prompt and chain unchanged)
+T1, T2 and T3d were rerun once on the live site and run in parallel. Mistral Large 4 served every turn, because Gemini 3.8 Flash had used up its free quota of 20 requests per day. All three pass `tests/grade.mjs`. Transcripts are in `run3/`.
+
+| Test | Result | Time (includes one retry after a dropped stream) |
+|---|---|---|
+| T1 | PASS | 847 s |
+| T2 | PASS | 885 s |
+| T3d | PASS | 993 s + 113 s follow-up |
