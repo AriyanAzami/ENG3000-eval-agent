@@ -371,7 +371,8 @@ async function runAttempt(
         stream: true,
         temperature: 0.2,
         top_p: 0.7,
-        max_tokens: 16384,
+        // Gemini counts hidden thinking tokens against this limit, so it gets more headroom.
+        max_tokens: attempt.provider === "gemini" ? 32768 : 16384,
         // Mistral Large 4 is a reasoning model; low effort keeps a full evaluation to ~4-5 min.
         ...(attempt.provider === "nvidia" && attempt.model.startsWith("mistralai/") ? { reasoning_effort: "low" } : {}),
       }),

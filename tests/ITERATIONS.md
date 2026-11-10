@@ -104,3 +104,8 @@ Why: the Google Sheet changed after the prompt was written, and a full evaluatio
 - The one-row-per-criterion format was restored (the shorter format lost the privacy finding and saved no time). Added: missing information alone is never a CRITICAL RISK or CRITICAL FAILURE; Sections 1–2 are never ASSESSMENT BLOCKED once the evaluation continues.
 - Live run 4 (tests/results/run4, Gemini 3.5 Flash-Lite): T2 passes the grader (88 s). T1 gives DO NOT PROCEED with all sections (127 s) but fails the strict citation check: six cells name an act without its section.
 - Earlier the same day on Gemini 3.6 Flash / Flash-Lite: T1, T2, T3a, T3b, T3d, T3e passed; T3c ("I don't know, just evaluate it") failed, because Flash-Lite blocked a second time.
+
+## Iteration 9 — output limit and short-form rule (2026-11-10)
+- Worker: `max_tokens` was already 16384 for NVIDIA and Gemini (8192 for Workers AI). Gemini now gets 32768, because its hidden thinking tokens count against the limit. No run had been cut off (every finish_reason was "stop").
+- Prompt: short-form rule. When more than half of a section's criteria lack evidence, the section lists them in one "Insufficient Evidence: IDs — reason" line instead of a row each; any criterion the description gives a fact about still gets its own row.
+- Live run 5 (tests/results/run5): T3b/T3c pass (Gemini 3.6 Flash; the "I don't know, just evaluate it" reply is 9,880 chars in 61 s and ends ASSESSMENT INCOMPLETE). T2 passes (Flash-Lite, 83 s), still with full tables and the privacy row 5.9.
