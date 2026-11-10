@@ -17,7 +17,7 @@ https://eng3000-eval-agent.lidooo.workers.dev
 
 - Cloudflare Workers + Static Assets (frontend in `public/`, API in `src/index.ts`)
 - Free AI providers with automatic failover (all OpenAI-style streaming), tried in this order:
-  1. Google Gemini `gemini-3.8-flash` (`GEMINI_MODEL`, secret `GEMINI_API_KEY`)
+  1. Google Gemini `gemini-3.8-flash`, then `gemini-3.6-flash`, then `gemini-3.5-flash-lite` (`GEMINI_MODEL`, comma-separated; each model has its own free daily quota; secret `GEMINI_API_KEY`)
   2. NVIDIA `mistralai/mistral-large-4-1t-a52b` (`MODEL`) on `NVIDIA_API_KEY`, then `NVIDIA_API_KEY_2`
   3. NVIDIA `nvidia/nemotron-3-ultra-550b-a55b` (`FALLBACK_MODEL`) on both keys
   4. Google Gemini `gemini-3-flash-preview` (`GEMINI_FALLBACK_MODEL`)

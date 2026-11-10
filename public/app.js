@@ -41,16 +41,8 @@
     bubble.textContent = "";
     var wrap = document.createElement("span");
     wrap.className = "typing";
-    if (label) {
-      var t = document.createElement("span");
-      t.className = "typing-label";
-      t.textContent = label;
-      wrap.appendChild(t);
-    } else {
-      wrap.setAttribute("role", "status");
-      wrap.setAttribute("aria-label", "Evaluating");
-    }
-    for (var i = 0; i < 3; i++) wrap.appendChild(document.createElement("i"));
+    wrap.setAttribute("role", "status");
+    wrap.textContent = label || "Evaluating…";
     bubble.appendChild(wrap);
   }
 

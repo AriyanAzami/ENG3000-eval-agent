@@ -89,3 +89,18 @@ Prompt (src/system-prompt.md). No IDs, Critical flags, scales, thresholds or dec
 - Best candidate: Nemotron 3.5 Super VL 120B with thinking off, at 40–90 s per full evaluation. Three prompt wording fixes followed (no "Assessment Blocked" echo, no repeat block after "I don't know", no "no conflict" lines). After them it passed T1/T2 three times in a row when called directly.
 - On the live site with that model first (T1 50 s, T2 48 s, T3d 71 s + 4 s), it still failed 3 of 6 tests: a T1 citation without a section, T3a with no "No legal basis identified", and T3c blocked again. Transcripts are in tests/runs/superVL-live-run (not committed).
 - Decision: reverted to the last passing chain and prompt (Gemini 3.8 Flash → Mistral Large 4 → ...). No free model screened is both under 3 min and reliable on every test.
+
+## Iteration 7 — realign with the current spreadsheet, shorter output, simpler page (2026-11-09)
+Why: the Google Sheet changed after the prompt was written, and a full evaluation took 14–16 min on the fallback model.
+- Section 8 decision rule now copies the sheet's: Critical Failure → Incomplete Assessment → Conditions → Proceed. The old extra steps (blocked first; "HIGH risk → Do Not Proceed") are gone; HIGH/MEDIUM risk without a critical flag is a condition, as in the sheet. Added the sheet's "design or scope changed → VERDICT EXPIRED" check and an "Information needed" question list.
+- Citations copied from the sheet: Reg. 941 s. 53(2), s. 72(2)(l); Competition Act s. 52(1), s. 74.01(1)(a)–(b.2); Buy Ontario Act, 2025; Treaty 13; UN Liability Convention; a provision for every ethics decision 7.1–7.12. Most "— section to be confirmed" markers replaced by a numbered regulation or a known section.
+- Output format: Sections 3–7 give table rows only to criteria that can be rated; criteria with no information go in one "Insufficient Evidence (information needed): IDs" line. Every ID is still accounted for, with roughly half the rows.
+- Known difference left for the group to settle: the sheet's Section 5 scores Insufficient Evidence as 0 = Fail = BLOCKED, while Sections 3, 4, 6, 7 and the explainer treat missing evidence as INCOMPLETE. The prompt keeps Insufficient Evidence = REVIEW REQUIRED for Section 5.
+- Gemini chain: `GEMINI_MODEL` now lists 3.8 Flash, 3.6 Flash and 3.5 Flash-Lite, each with its own free daily quota (model IDs not yet verified against the key; an unknown ID fails over in under a second).
+- Page: plain single-column layout, system fonts, a checklist of what to include, and the group's two test cases as examples.
+
+## Iteration 8 — group's latest sheet changes; live results (2026-11-10)
+- Sheet changes copied into the prompt: reassessment questions 1.11–1.13, the independent-confirmation question, and the verdict priority Reassessment → Critical Failure → Incomplete → Conditions → Proceed.
+- The one-row-per-criterion format was restored (the shorter format lost the privacy finding and saved no time). Added: missing information alone is never a CRITICAL RISK or CRITICAL FAILURE; Sections 1–2 are never ASSESSMENT BLOCKED once the evaluation continues.
+- Live run 4 (tests/results/run4, Gemini 3.5 Flash-Lite): T2 passes the grader (88 s). T1 gives DO NOT PROCEED with all sections (127 s) but fails the strict citation check: six cells name an act without its section.
+- Earlier the same day on Gemini 3.6 Flash / Flash-Lite: T1, T2, T3a, T3b, T3d, T3e passed; T3c ("I don't know, just evaluate it") failed, because Flash-Lite blocked a second time.
