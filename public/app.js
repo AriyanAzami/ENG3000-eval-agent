@@ -180,6 +180,24 @@
 
     var accumulated = "";
     var pending = false;
+
+    // Live status line: elapsed time, and which section is being written once text arrives.
+    var startedAt = Date.now();
+    function updateStatus() {
+      var secs = Math.floor((Date.now() - startedAt) / 1000);
+      var clock = Math.floor(secs / 60) + ":" + ("0" + (secs % 60)).slice(-2);
+      var stage;
+      if (!accumulated) {
+        stage = secs < 8 ? "Sending your description to the model" : "The model is reading the description and preparing the evaluation";
+      } else {
+        var found = accumulated.match(/Section\s+([1-8])\b/g);
+        var n = found ? Number(found[found.length - 1].replace(/\D/g, "")) : 0;
+        stage = n ? "Writing Section " + n + " of 8" : "Writing the reply";
+      }
+      ui.note.textContent = stage + " · " + clock + " elapsed. A full evaluation usually takes 1–2 minutes; please keep this page open.";
+    }
+    updateStatus();
+    var statusTimer = setInterval(updateStatus, 1000);
     function schedule() {
       if (pending) return;
       pending = true;
@@ -288,6 +306,7 @@
         failTurn("Network error. Check your connection and try again.");
       }
     } finally {
+      clearInterval(statusTimer);
       if (ui.note) ui.note.remove();
       controller = null;
       setStreaming(false);

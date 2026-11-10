@@ -125,7 +125,17 @@ h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
 }
 .avatar { display: none; }
 .card-actions { margin-top: 8px; }
-.wait-note { margin: 0 0 6px; color: var(--muted); font-size: 0.9rem; }
+.wait-note {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+.typing { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
 
 .typing { color: var(--muted); }
 
