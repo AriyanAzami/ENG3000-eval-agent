@@ -85,12 +85,17 @@
     var bubble = document.createElement("div");
     bubble.className = "bubble md";
     setTyping(bubble);
+    var note = document.createElement("p");
+    note.className = "wait-note";
+    note.setAttribute("role", "status");
+    note.textContent = "Full evaluations can take a few minutes.";
     card.appendChild(head);
+    card.appendChild(note);
     card.appendChild(bubble);
     el.appendChild(card);
     messagesEl.appendChild(el);
     scrollToBottom();
-    return { el: el, card: card, bubble: bubble };
+    return { el: el, card: card, bubble: bubble, note: note };
   }
 
   function addCopyAction(ui, rawText) {
@@ -291,6 +296,7 @@
         failTurn("Network error. Check your connection and try again.");
       }
     } finally {
+      if (ui.note) ui.note.remove();
       controller = null;
       setStreaming(false);
     }

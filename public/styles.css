@@ -279,6 +279,12 @@ h1 {
 .card-name { font-size: 0.82rem; font-weight: 600; color: var(--muted); letter-spacing: 0.005em; }
 .card-actions { display: flex; justify-content: flex-end; margin: 6px -8px 0 0; }
 
+.wait-note {
+  margin: -2px 0 10px; padding: 6px 10px;
+  font-size: 0.82rem; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+}
+
 /* Typing indicator */
 .typing { display: inline-flex; align-items: center; gap: 5px; min-height: 1.6em; color: var(--muted); }
 .typing-label { margin-right: 4px; font-size: 0.93rem; }

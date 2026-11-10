@@ -1,7 +1,7 @@
 # Acceptance test summary — Group 31 Project Evaluation Agent
 
 Live URL: https://eng3000-eval-agent.lidooo.workers.dev/
-Model that produced these runs: NVIDIA `mistralai/mistral-large-4-1t-a52b` (reasoning_effort "low"), temperature 0.2, max_tokens 16384. The first provider in the chain, Gemini 3.8 Flash, was unavailable on Google's side during the final runs, so the Worker failed over automatically.
+Model that produced these runs: NVIDIA `mistralai/mistral-large-4-1t-a52b` (reasoning_effort "low"), temperature 0.2, max_tokens 16384. The first provider in the chain, Gemini 3.8 Flash, had used up its free quota (20 requests per day, HTTP 429) during the final runs, so the Worker failed over automatically.
 Date: 2026-11-09. Each test was a fresh conversation. Two consecutive passing runs on the same final prompt: `run1/` (pass E) and `run2/` (pass F). The top-level `T*.md` files are the run 2 transcripts.
 
 | Test | Run 1 | Run 2 | Notes |

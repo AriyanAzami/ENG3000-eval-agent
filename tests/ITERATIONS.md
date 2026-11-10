@@ -73,5 +73,19 @@ Prompt (src/system-prompt.md). No IDs, Critical flags, scales, thresholds or dec
 
 ## Final result
 - Passes E and F (final prompt, run back-to-back): **all tests pass in both**, by both the mechanical grader and a manual read. Transcripts are in tests/results/run1 and tests/results/run2; summary in tests/results/SUMMARY.md.
-- Model that served the final runs: NVIDIA mistral-large-4-1t-a52b. The first provider, Gemini 3.8 Flash, was down on Google's side.
+- Model that served the final runs: NVIDIA mistral-large-4-1t-a52b. The first provider, Gemini 3.8 Flash, had used up its free quota (20 requests per day, HTTP 429), so the Worker failed over.
 - No criterion ID, Critical flag, rating scale, threshold or decision-rule order was changed. All behaviour is in the prompt. The worker only adds transport settings (max_tokens, temperature, reasoning effort) and failover.
+
+## Iteration 6 — speed screening (goal: full T1 under 3 min), not adopted
+- Gemini 3.8 Flash is not down: it returns HTTP 429 because the free tier allows only 20 requests per day. It stays first in the chain, and the Worker fails over in under 1 s once the quota is used up.
+- Mistral Large 4 cannot go faster: reasoning_effort "none" and "minimal" both return HTTP 400.
+- Direct NVIDIA streaming T1 screen, same prompt:
+  - Gemma 4 31B: 115 s, but no SDWA and no jurisdiction note.
+  - Nemotron 3 Ultra with thinking off: 174 s, wrote "no conflict".
+  - Nemotron 3.5 Lightning with thinking off: 65–77 s, echoed "Assessment Blocked" and had citations with no section.
+  - Nemotron 3.5 Super VL with thinking on: ran out of tokens while reasoning.
+  - GPT-OSS 20B and MiniMax M3.1 Flash: wrongly blocked T1.
+  - DeepSeek v4.1 Flash and GLM 5.3 Flash: timed out. Kimi K2.6, Nemotron 3 Super and Mistral Large 2: HTTP 404.
+- Best candidate: Nemotron 3.5 Super VL 120B with thinking off, at 40–90 s per full evaluation. Three prompt wording fixes followed (no "Assessment Blocked" echo, no repeat block after "I don't know", no "no conflict" lines). After them it passed T1/T2 three times in a row when called directly.
+- On the live site with that model first (T1 50 s, T2 48 s, T3d 71 s + 4 s), it still failed 3 of 6 tests: a T1 citation without a section, T3a with no "No legal basis identified", and T3c blocked again. Transcripts are in tests/runs/superVL-live-run (not committed).
+- Decision: reverted to the last passing chain and prompt (Gemini 3.8 Flash → Mistral Large 4 → ...). No free model screened is both under 3 min and reliable on every test.
