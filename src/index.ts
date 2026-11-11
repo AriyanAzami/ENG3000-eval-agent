@@ -75,7 +75,7 @@ function validateMessages(body: unknown): Validation {
   return { ok: true, messages };
 }
 
-async function handleChat(request: Request, env: Env): Promise<Response> {
+async function handleChat(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   if (request.method !== "POST") {
     return json(405, { error: "Method not allowed. Use POST." });
   }
@@ -116,15 +116,22 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
   let lastStatus = 0; // 0 = network error / timeout / abort
   const failures: string[] = [];
   for (let i = 0; i < attempts.length; i++) {
-    const out = await runAttempt(attempts[i], messages, env);
-    if (out.kind === "ok") {
+    const out = await openAttempt(attempts[i], messages, env);
+    if (out.kind === "open") {
       console.log(
-        `Attempt ${i} succeeded (${attempts[i].provider}:${attempts[i].model}, ${attempts[i].keyLabel})` +
+        `Attempt ${i} succeeded (${attemptLabel(attempts[i])})` +
           (failures.length ? `; earlier failures: ${failures.join("; ")}` : ""),
       );
-      return out.response;
+      // From here on the response is committed: the Worker relays the stream itself and
+      // resumes on another provider if this one stops early.
+      const { readable, writable } = new IdentityTransformStream();
+      ctx.waitUntil(relayWithResume(writable.getWriter(), attempts, i, out, messages, env));
+      const a = attempts[i];
+      return new Response(readable, {
+        status: 200,
+        headers: sseHeaders(a.provider === "nvidia" ? a.model : `${a.provider}:${a.model}`),
+      });
     }
-    if (out.kind === "fatal") return out.response;
     lastStatus = out.status;
     failures.push(`#${i} ${attempts[i].provider}:${attempts[i].model}/${attempts[i].keyLabel}: ${out.reason}`);
   }
@@ -156,8 +163,17 @@ type Attempt = {
 
 function buildAttempts(env: Env): Attempt[] {
   const attempts: Attempt[] = [];
-  // Order: Gemini 3.8 Flash (~1 min per full evaluation) -> NVIDIA primary/fallback
-  // models on each key -> terser Gemini fallback -> Cloudflare Workers AI. All free.
+  // Order: NVIDIA primary/fallback models on each key -> Gemini models -> terser Gemini
+  // fallback -> Cloudflare Workers AI. All free. NVIDIA goes first because the Gemini
+  // free tier drops streams mid-answer with 503 "high demand" errors.
+  const keys = [env.NVIDIA_API_KEY, env.NVIDIA_API_KEY_2].filter((k): k is string => Boolean(k));
+  const models = [env.MODEL];
+  if (env.FALLBACK_MODEL && env.FALLBACK_MODEL !== env.MODEL) models.push(env.FALLBACK_MODEL);
+  for (const model of models) {
+    keys.forEach((key, i) =>
+      attempts.push({ provider: "nvidia", model, url: NVIDIA_URL, key, keyLabel: `key${i + 1}` }),
+    );
+  }
   if (env.GEMINI_API_KEY) {
     // GEMINI_MODEL may list several models (comma-separated): free-tier capacity for
     // individual preview models comes and goes, so each one is its own attempt.
@@ -169,15 +185,7 @@ function buildAttempts(env: Env): Attempt[] {
       attempts.push({ provider: "gemini", model, url: GEMINI_URL, key: env.GEMINI_API_KEY, keyLabel: "key1" });
     }
   }
-  const keys = [env.NVIDIA_API_KEY, env.NVIDIA_API_KEY_2].filter((k): k is string => Boolean(k));
-  const models = [env.MODEL];
-  if (env.FALLBACK_MODEL && env.FALLBACK_MODEL !== env.MODEL) models.push(env.FALLBACK_MODEL);
-  for (const model of models) {
-    keys.forEach((key, i) =>
-      attempts.push({ provider: "nvidia", model, url: NVIDIA_URL, key, keyLabel: `key${i + 1}` }),
-    );
-  }
-  // Faster but terser Gemini models go after NVIDIA: they skip criteria more often.
+  // Faster but terser Gemini models go last among the hosted APIs: they skip criteria more often.
   if (env.GEMINI_API_KEY && env.GEMINI_FALLBACK_MODEL) {
     for (const model of env.GEMINI_FALLBACK_MODEL.split(",").map((m) => m.trim()).filter(Boolean)) {
       attempts.push({ provider: "gemini", model, url: GEMINI_URL, key: env.GEMINI_API_KEY, keyLabel: "key1" });
@@ -294,32 +302,13 @@ async function runWorkersAi(
     if (!first || new TextDecoder().decode(first).trim() === "data: [DONE]") {
       return { kind: "retry", status: 502, reason: "stream ended with no data" };
     }
-    let sentFirst = false;
-    const stream = new ReadableStream<Uint8Array>({
-      async pull(ctrl) {
-        if (!sentFirst) {
-          sentFirst = true;
-          ctrl.enqueue(first);
-          return;
-        }
-        try {
-          const { done, value } = await reader.read();
-          if (done) ctrl.close();
-          else if (value) ctrl.enqueue(value);
-        } catch (err) {
-          ctrl.error(err);
-        }
-      },
-      cancel(reason) {
-        return reader.cancel(reason);
-      },
-    });
     return {
-      kind: "ok",
-      response: new Response(stream, {
-        status: 200,
-        headers: sseHeaders(`workers-ai:${attempt.model}`),
-      }),
+      kind: "open",
+      reader,
+      first,
+      abort: () => {
+        reader.cancel("aborted").catch(() => {});
+      },
     };
   } catch (err) {
     if (timer !== undefined) clearTimeout(timer);
@@ -329,22 +318,229 @@ async function runWorkersAi(
   }
 }
 
-type AttemptOutcome =
-  | { kind: "ok"; response: Response }
-  | { kind: "fatal"; response: Response }
-  | { kind: "retry"; status: number; reason: string };
+type Msg = { role: string; content: string };
+
+// An upstream stream that has produced its first non-empty chunk.
+type Opened = {
+  kind: "open";
+  reader: ReadableStreamDefaultReader<Uint8Array>;
+  first: Uint8Array;
+  abort: () => void;
+};
+
+type AttemptOutcome = Opened | { kind: "retry"; status: number; reason: string };
+
+function attemptLabel(a: Attempt): string {
+  return `${a.provider}:${a.model}/${a.keyLabel}`;
+}
+
+const MAX_RESUMES = 3;
+// No upstream bytes for this long mid-stream counts as a dropped stream.
+const IDLE_TIMEOUT_MS = 120000;
+const FINISH_RE = /"finish_reason"\s*:\s*"([a-z_]+)"/;
+const ERROR_PAYLOAD_RE = /^[\[{]\s*\{?\s*"error"/;
+const CONTINUE_INSTRUCTION =
+  "Your previous reply was cut off before it was finished. Continue it exactly where it stopped, " +
+  "starting with the very next character, even if that is in the middle of a word, sentence or table row. " +
+  "Do not repeat anything already written, do not restart, do not summarise, and do not add any preamble or apology.";
+
+type Segment = { complete: boolean; reason: string };
+
+// Reads one upstream stream and forwards its valid SSE lines to the client. [DONE] is
+// withheld (the caller sends it once the whole answer is finished) and anything that is
+// not SSE, such as a raw JSON error object, is dropped and ends the segment as incomplete.
+// Payloads that carry answer text are kept unparsed in `pending`; they are only parsed if
+// a resume is needed, which keeps per-chunk CPU low on the free plan.
+async function relaySegment(
+  src: Opened,
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  enc: TextEncoder,
+  pending: string[],
+): Promise<Segment> {
+  const dec = new TextDecoder();
+  let buf = "";
+  let sawDone = false;
+  let finish = "";
+  let bad = "";
+  let lastAt = Date.now();
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastAt > IDLE_TIMEOUT_MS) src.abort();
+  }, 15000);
+
+  const handle = (block: string): string => {
+    let out = "";
+    let start = 0;
+    while (start < block.length && !sawDone && !bad) {
+      let end = block.indexOf("\n", start);
+      if (end < 0) end = block.length;
+      let line = block.slice(start, end);
+      start = end + 1;
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      if (line === "") {
+        out += "\n";
+        continue;
+      }
+      if (line.startsWith("data:")) {
+        const payload = line.slice(5).trim();
+        if (payload === "[DONE]") {
+          sawDone = true;
+          break;
+        }
+        if (ERROR_PAYLOAD_RE.test(payload)) {
+          bad = `upstream error: ${payload.slice(0, 300)}`;
+          break;
+        }
+        if (payload.includes('"finish_reason"')) {
+          const m = FINISH_RE.exec(payload);
+          if (m) finish = m[1];
+        }
+        if (payload.includes('"content"')) pending.push(payload);
+        out += line + "\n";
+        continue;
+      }
+      // SSE comments and other SSE fields carry nothing the client needs.
+      if (line.startsWith(":") || /^(event|id|retry):/.test(line)) continue;
+      bad = `non-SSE data: ${line.slice(0, 300)}`;
+    }
+    return out;
+  };
+
+  try {
+    let value: Uint8Array | undefined = src.first;
+    for (;;) {
+      if (value && value.byteLength > 0) {
+        lastAt = Date.now();
+        buf += dec.decode(value, { stream: true });
+        const nl = buf.lastIndexOf("\n");
+        if (nl >= 0) {
+          const out = handle(buf.slice(0, nl + 1));
+          buf = buf.slice(nl + 1);
+          if (out) await writer.write(enc.encode(out)); // throws if the client went away
+        }
+        if (sawDone || bad) break;
+      }
+      let r: ReadableStreamReadResult<Uint8Array>;
+      try {
+        r = await src.reader.read();
+      } catch (err) {
+        bad = `read failed: ${err instanceof Error ? err.message : String(err)}`;
+        break;
+      }
+      if (r.done) {
+        if (buf) {
+          const out = handle(buf + "\n");
+          buf = "";
+          if (out) await writer.write(enc.encode(out));
+        }
+        break;
+      }
+      value = r.value;
+    }
+  } finally {
+    clearInterval(watchdog);
+    src.abort();
+  }
+
+  if (bad) return { complete: false, reason: bad };
+  if (finish === "length") return { complete: false, reason: "finish_reason length" };
+  if (sawDone || finish === "stop") return { complete: true, reason: "" };
+  return { complete: false, reason: "stream ended without [DONE] or finish_reason stop" };
+}
+
+// Relays the first provider's stream; if it stops early, asks the next provider in the
+// attempts list to continue from the text sent so far, streaming into the same response.
+async function relayWithResume(
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  attempts: Attempt[],
+  startIdx: number,
+  opened: Opened,
+  baseMessages: Msg[],
+  env: Env,
+): Promise<void> {
+  const enc = new TextEncoder();
+  const pending: string[] = [];
+  let text = "";
+  let idx = startIdx;
+  let current: Opened = opened;
+  let resumes = 0;
+  let emptyHops = 0;
+  let lastLen = 0;
+  let errorMessage = "";
+  try {
+    for (;;) {
+      const seg = await relaySegment(current, writer, enc, pending);
+      if (seg.complete) {
+        // A "finished" stream that carried no answer text at all (some reasoning models
+        // do this) is not an answer: hand over to the next provider instead.
+        const hasText =
+          text.length > 0 ||
+          pending.some((p) => {
+            try {
+              const c = (JSON.parse(p) as { choices?: { delta?: { content?: unknown } }[] }).choices?.[0]?.delta?.content;
+              return typeof c === "string" && c.length > 0;
+            } catch {
+              return false;
+            }
+          });
+        if (hasText) break;
+        seg.reason = "finished with no answer text";
+      }
+      for (const p of pending) {
+        try {
+          const c = (JSON.parse(p) as { choices?: { delta?: { content?: unknown } }[] }).choices?.[0]?.delta?.content;
+          if (typeof c === "string") text += c;
+        } catch {
+          // ignore malformed line
+        }
+      }
+      pending.length = 0;
+      console.error(
+        `Stream from ${attemptLabel(attempts[idx])} stopped early after ${text.length} chars: ${seg.reason}`,
+      );
+      // A provider that contributed no text does not use up a resume; it is skipped like a
+      // failed attempt, but only once round the whole list so this can never loop forever.
+      if (text.length === lastLen && ++emptyHops <= attempts.length) resumes--;
+      lastLen = text.length;
+      if (resumes >= MAX_RESUMES) {
+        errorMessage = `The answer was interrupted and could not be completed after ${MAX_RESUMES} attempts to resume it. Send "continue" to carry on from where it stopped.`;
+        break;
+      }
+      resumes++;
+      const messages: Msg[] = text
+        ? [...baseMessages, { role: "assistant", content: text }, { role: "user", content: CONTINUE_INSTRUCTION }]
+        : baseMessages;
+      let next: Opened | null = null;
+      for (let n = 1; n <= attempts.length && !next; n++) {
+        const j = (idx + n) % attempts.length;
+        const out = await openAttempt(attempts[j], messages, env);
+        if (out.kind === "open") {
+          next = out;
+          idx = j;
+        } else {
+          console.error(`Resume ${resumes}: ${attemptLabel(attempts[j])} failed: ${out.reason}`);
+        }
+      }
+      if (!next) {
+        errorMessage = 'The answer was interrupted and no AI service was available to finish it. Send "continue" to try again.';
+        break;
+      }
+      console.log(`Resume ${resumes}: continuing on ${attemptLabel(attempts[idx])}`);
+      current = next;
+    }
+    const tail = errorMessage ? `data: ${JSON.stringify({ error: { message: errorMessage } })}\n\n` : "";
+    await writer.write(enc.encode(`${tail}data: [DONE]\n\n`));
+    await writer.close();
+  } catch (err) {
+    // The client disconnected (or the response stream broke): stop the upstream too.
+    console.error("Relay stopped:", err instanceof Error ? err.message : String(err));
+    current.abort();
+    writer.abort(err).catch(() => {});
+  }
+}
 
 // Any upstream error moves on to the next provider: a bad key, missing model, exhausted
 // credits (402) or a provider-specific 400 on one service must never take the site down.
-function isRetryableStatus(_s: number): boolean {
-  return true;
-}
-
-async function runAttempt(
-  attempt: Attempt,
-  messages: { role: string; content: string }[],
-  env: Env,
-): Promise<AttemptOutcome> {
+async function openAttempt(attempt: Attempt, messages: Msg[], env: Env): Promise<AttemptOutcome> {
   if (attempt.provider === "workers-ai") return runWorkersAi(attempt, messages, env);
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(
@@ -388,11 +584,7 @@ async function runAttempt(
       clear();
       const s = upstream.status;
       console.error(`Upstream error ${s} (${attempt.provider}:${attempt.model}/${attempt.keyLabel}):`, detail.slice(0, 2000));
-      if (isRetryableStatus(s)) return { kind: "retry", status: s, reason: `HTTP ${s}` };
-      return {
-        kind: "fatal",
-        response: json(502, { error: `The AI service returned an unexpected error (status ${s}).` }),
-      };
+      return { kind: "retry", status: s, reason: `HTTP ${s}` };
     }
 
     if (!upstream.body) {
@@ -418,31 +610,14 @@ async function runAttempt(
       return { kind: "retry", status: 502, reason: "stream ended with no data" };
     }
 
-    // Re-emit the first chunk, then hand the rest of the upstream body to a native
-    // pipe. A JS pull loop costs CPU per chunk, and a long evaluation (thousands of
-    // chunks) exceeds the free plan's CPU limit, cutting the answer off mid-stream.
-    const { readable: stream, writable } = new IdentityTransformStream();
-    const body = upstream.body;
-    const writer = writable.getWriter();
-    writer
-      .write(first)
-      .then(() => {
-        writer.releaseLock();
-        reader.releaseLock();
-        return body.pipeTo(writable);
-      })
-      .catch((err) => {
-        console.error("Stream pipe failed:", err instanceof Error ? err.message : String(err));
-      });
-
     return {
-      kind: "ok",
-      response: new Response(stream, {
-        status: 200,
-        headers: sseHeaders(
-          attempt.provider === "nvidia" ? attempt.model : `${attempt.provider}:${attempt.model}`,
-        ),
-      }),
+      kind: "open",
+      reader,
+      first,
+      abort: () => {
+        controller.abort();
+        reader.cancel("aborted").catch(() => {});
+      },
     };
   } catch (err) {
     clear();
@@ -453,7 +628,7 @@ async function runAttempt(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(request.url).pathname;
 
     if (path === "/api/health") {
@@ -475,7 +650,7 @@ export default {
       });
     }
     if (path === "/api/chat") {
-      return handleChat(request, env);
+      return handleChat(request, env, ctx);
     }
     if (path.startsWith("/api/")) {
       return json(404, { error: "Not found." });

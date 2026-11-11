@@ -112,6 +112,30 @@
     ui.card.appendChild(bar);
   }
 
+  // Shown under a reply that did not finish, so a truncated answer never looks complete.
+  function addInterruptedNotice(ui, reason) {
+    var box = document.createElement("div");
+    box.className = "interrupted";
+    box.setAttribute("role", "alert");
+    var msg = document.createElement("p");
+    var strong = document.createElement("strong");
+    strong.textContent = "This answer is incomplete. ";
+    msg.appendChild(strong);
+    msg.appendChild(document.createTextNode(reason + " The text above stops partway through."));
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn primary";
+    btn.textContent = "Continue";
+    btn.addEventListener("click", function () {
+      if (streaming) return;
+      box.remove();
+      send("continue");
+    });
+    box.appendChild(msg);
+    box.appendChild(btn);
+    ui.card.appendChild(box);
+  }
+
   function showError(message) {
     var el = document.createElement("div");
     el.className = "msg error";
@@ -194,7 +218,7 @@
         var n = found ? Number(found[found.length - 1].replace(/\D/g, "")) : 0;
         stage = n ? "Writing Section " + n + " of 8" : "Writing the reply";
       }
-      ui.note.textContent = stage + " · " + clock + " elapsed. A full evaluation usually takes 1–2 minutes; please keep this page open.";
+      ui.note.textContent = stage + " · " + clock + " elapsed. A full evaluation can take a few minutes; please keep this page open.";
     }
     updateStatus();
     var statusTimer = setInterval(updateStatus, 1000);
@@ -218,12 +242,14 @@
       showError(message);
     }
 
-    function finish() {
+    // interruption: falsy for a complete answer, otherwise the reason shown to the user.
+    function finish(interruption) {
       ui.bubble.innerHTML = renderMarkdown(accumulated);
       decorate(ui.bubble);
-      scrollToBottom();
       history.push({ role: "assistant", content: accumulated });
+      if (interruption) addInterruptedNotice(ui, interruption);
       addCopyAction(ui, accumulated);
+      scrollToBottom();
     }
 
     try {
@@ -248,6 +274,7 @@
       var decoder = new TextDecoder();
       var buffer = "";
       var done = false;
+      var streamError = "";
 
       while (!done) {
         var chunk = await reader.read();
@@ -262,6 +289,10 @@
           if (payload === "[DONE]") { done = true; break; }
           try {
             var obj = JSON.parse(payload);
+            if (obj && obj.error) {
+              streamError = (obj.error && obj.error.message) || String(obj.error) || "The AI service reported an error.";
+              continue;
+            }
             var delta = obj.choices && obj.choices[0] && obj.choices[0].delta;
             if (delta && !accumulated && (delta.reasoning_content || delta.reasoning)) {
               setTyping(ui.bubble, "Thinking…");
@@ -284,16 +315,22 @@
         }
       }
 
+      // A stream is only complete when it ends with [DONE] and carried no error object.
+      var interruption = streamError
+        ? streamError
+        : !done
+          ? "The connection closed before the answer was finished."
+          : "";
       if (accumulated) {
-        finish();
+        finish(interruption);
       } else {
-        failTurn("The AI service returned an empty response. Please try again.");
+        failTurn(interruption || "The AI service returned an empty response. Please try again.");
       }
     } catch (err) {
       if (err && err.name === "AbortError") {
-        // User pressed Stop: keep what arrived, no error.
+        // User pressed Stop: keep what arrived, marked as unfinished.
         if (accumulated) {
-          finish();
+          finish("You stopped this answer before it was finished.");
         } else {
           history.pop();
           input.value = text;
@@ -302,6 +339,9 @@
           userEl.remove();
           if (!messagesEl.querySelector(".msg")) emptyEl.hidden = false;
         }
+      } else if (accumulated) {
+        // The connection dropped mid-answer: keep the partial text, marked as unfinished.
+        finish("The connection was lost before the answer was finished.");
       } else {
         failTurn("Network error. Check your connection and try again.");
       }

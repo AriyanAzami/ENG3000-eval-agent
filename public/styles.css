@@ -123,6 +123,18 @@ h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
   border-radius: 6px;
   padding: 10px 12px;
 }
+.interrupted {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--error-bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+.interrupted p { margin: 0; flex: 1; min-width: 200px; font-size: 0.92rem; }
 .avatar { display: none; }
 .card-actions { margin-top: 8px; }
 .wait-note {
