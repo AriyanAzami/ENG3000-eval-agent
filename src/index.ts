@@ -163,20 +163,11 @@ type Attempt = {
 
 function buildAttempts(env: Env): Attempt[] {
   const attempts: Attempt[] = [];
-  // Order: NVIDIA primary/fallback models on each key -> Gemini models -> terser Gemini
-  // fallback -> Cloudflare Workers AI. All free. NVIDIA goes first because the Gemini
-  // free tier drops streams mid-answer with 503 "high demand" errors.
-  const keys = [env.NVIDIA_API_KEY, env.NVIDIA_API_KEY_2].filter((k): k is string => Boolean(k));
-  const models = [env.MODEL];
-  if (env.FALLBACK_MODEL && env.FALLBACK_MODEL !== env.MODEL) models.push(env.FALLBACK_MODEL);
-  for (const model of models) {
-    keys.forEach((key, i) =>
-      attempts.push({ provider: "nvidia", model, url: NVIDIA_URL, key, keyLabel: `key${i + 1}` }),
-    );
-  }
+  // Order: Gemini models (paid key, ~1 min per full evaluation) -> NVIDIA primary/fallback
+  // models on each key -> terser Gemini fallback -> Cloudflare Workers AI.
   if (env.GEMINI_API_KEY) {
-    // GEMINI_MODEL may list several models (comma-separated): free-tier capacity for
-    // individual preview models comes and goes, so each one is its own attempt.
+    // GEMINI_MODEL may list several models (comma-separated): capacity for individual
+    // models comes and goes, so each one is its own attempt.
     const geminiModels = (env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL)
       .split(",")
       .map((m) => m.trim())
@@ -185,7 +176,15 @@ function buildAttempts(env: Env): Attempt[] {
       attempts.push({ provider: "gemini", model, url: GEMINI_URL, key: env.GEMINI_API_KEY, keyLabel: "key1" });
     }
   }
-  // Faster but terser Gemini models go last among the hosted APIs: they skip criteria more often.
+  const keys = [env.NVIDIA_API_KEY, env.NVIDIA_API_KEY_2].filter((k): k is string => Boolean(k));
+  const models = [env.MODEL];
+  if (env.FALLBACK_MODEL && env.FALLBACK_MODEL !== env.MODEL) models.push(env.FALLBACK_MODEL);
+  for (const model of models) {
+    keys.forEach((key, i) =>
+      attempts.push({ provider: "nvidia", model, url: NVIDIA_URL, key, keyLabel: `key${i + 1}` }),
+    );
+  }
+  // Faster but terser Gemini models go after NVIDIA: they skip criteria more often.
   if (env.GEMINI_API_KEY && env.GEMINI_FALLBACK_MODEL) {
     for (const model of env.GEMINI_FALLBACK_MODEL.split(",").map((m) => m.trim()).filter(Boolean)) {
       attempts.push({ provider: "gemini", model, url: GEMINI_URL, key: env.GEMINI_API_KEY, keyLabel: "key1" });
